@@ -1,0 +1,14 @@
+lendingclub-credit-risk/
+│
+├── data/
+├── notebooks/
+│   ├── 01_EDA.ipynb
+│   ├── 02_Modeling.ipynb
+│   ├── 03_Expected_Loss.ipynb
+│   └── 04_Portfolio_Simulation.ipynb
+├── src/
+│   ├── preprocessing.py
+│   ├── modeling.py
+│   └── financial_metrics.py
+├── README.md
+└── requirements.txt
