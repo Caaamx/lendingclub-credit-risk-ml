@@ -1,7 +1,9 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-import visualization as viz
+import numpy as np
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from . import visualization as viz
 
 # ==========================================================
 # Dataset Characterization
@@ -197,7 +199,8 @@ def plot_credit_history_profile(
     variables,
     titles=None,
     bins=10,
-    zero_threshold=0.60
+    zero_threshold=0.60,
+    section_title= None
 ):
     """
     Univariate analysis for credit history variables.
@@ -213,7 +216,7 @@ def plot_credit_history_profile(
     fig, axes = viz.create_figure(
         n_rows=len(variables),
         n_cols=3,
-        title="Credit History Profile"
+        title=section_title
     )
 
     for i, variable in enumerate(variables):
@@ -386,11 +389,17 @@ def plot_bivariate_numeric(
         # Distribution
 
         viz.plot_bar(
-            ax=axes[i,0],
-            summary=summary,
+            ax=axes[i, 0],
+            data=summary,
             x="group",
-            y="observations",
-            title=f"{title}\nObservation Distribution"
+            y="observations"
+        )
+
+        viz.format_axes(
+            ax=axes[i, 0],
+            title=f"{title}\nObservation Distribution",
+            xlabel="",
+            ylabel="Observations"
         )
 
         # Target Rate
@@ -398,8 +407,15 @@ def plot_bivariate_numeric(
         viz.plot_target_rate(
             ax=axes[i,1],
             summary=summary,
-            x="group",
-            title=f"{title}\nDefault Rate"
+            group="group",
+            target_rate="target_rate"
+        )
+
+        viz.format_axes(
+            ax=axes[i,1],
+            title=f"{title}\nDefault Rate",
+            xlabel="",
+            ylabel="Default Rate"
         )
 
     plt.tight_layout()
@@ -430,7 +446,7 @@ def plot_bivariate_categorical(
     fig, axes = viz.create_figure(
         n_rows=len(variables),
         n_cols=2,
-        figsize=(15, 4 * len(variables)),
+        figsize=(18, 4.5 * len(variables)),
         title=section_title
     )
 
@@ -461,26 +477,172 @@ def plot_bivariate_categorical(
 
         # Frequency
 
+        # ==================================================
+        # Observation Distribution
+        # ==================================================
+        print(variable)
+        print(summary.head())
+        print(summary.shape)
+        print("-" * 40)
         viz.plot_bar(
-            ax=axes[i,0],
-            summary=summary,
+            ax=axes[i, 0],
+            data=summary,
             x="group",
             y="observations",
-            title=f"{title}\nObservation Distribution"
+            annotate=False
         )
 
+        viz.format_axes(
+            ax=axes[i, 0],
+            title=f"{title}\nObservation Distribution",
+            xlabel="",
+            ylabel="Observations"
+        )
+
+        # ==================================================
         # Default Rate
+        # ==================================================
 
         viz.plot_target_rate(
-            ax=axes[i,1],
-            summary=summary,
-            x="group",
-            title=f"{title}\nDefault Rate"
+            ax=axes[i, 1],
+            summary=summary
+        )
+
+        viz.format_axes(
+            ax=axes[i, 1],
+            title=f"{title}\nDefault Rate",
+            xlabel="",
+            ylabel="Default Rate"
+        )
+    
+    plt.tight_layout()
+    plt.show()
+    return summaries
+
+# ==========================================================
+# Loan Characteristics
+# ==========================================================
+
+# ==========================================================
+# Loan Characteristics
+# ==========================================================
+
+def plot_loan_characteristics(
+    data,
+    variables,
+    titles=None,
+    normalize=False,
+    rare_threshold=0.01,
+    section_title=None
+):
+    """
+    Univariate analysis for loan characteristics.
+
+    Displays
+
+    • Category frequency
+    • Cardinality
+    • Rare categories
+    • Missing values
+    """
+
+    if titles is None:
+        titles = {}
+
+    fig, axes = viz.create_figure(
+        n_rows=len(variables),
+        n_cols=1,
+        figsize=(18, 4.5 * len(variables)),
+        title=section_title
+    )
+
+    if len(variables) == 1:
+        axes = axes.reshape(-1, 1)
+
+    for i, variable in enumerate(variables):
+
+        title = titles.get(
+            variable,
+            variable.replace("_", " ").title()
+        )
+
+        # --------------------------------------------------
+        # Summary statistics
+        # --------------------------------------------------
+
+        missing_pct = data[variable].isna().mean()
+
+        rare_categories = (
+            data[variable]
+            .value_counts(normalize=True)
+            .lt(rare_threshold)
+            .sum()
+        )
+
+        # --------------------------------------------------
+        # Prepare grouped categories
+        # --------------------------------------------------
+
+        # Cardinality BEFORE grouping rare categories
+        n_categories = (
+            data[variable]
+            .dropna()
+            .nunique()
+        )
+
+        prepared = viz.prepare_categorical_groups(
+            data=data,
+            variable=variable,
+            rare_threshold=rare_threshold
+)
+
+        # --------------------------------------------------
+        # Frequency plot
+        # --------------------------------------------------
+        
+        viz.plot_bar_distribution(
+            ax=axes[i, 0],
+            data=prepared,
+            variable="group",
+            normalize=normalize,
+            annotate=n_categories <= 12
+        )
+
+        viz.format_axes(
+            ax=axes[i, 0],
+            title=title
+        )
+
+        # --------------------------------------------------
+        # Metadata
+        # --------------------------------------------------
+
+        metadata = (
+            f"Cardinality: {n_categories}\n"
+            f"Rare Categories: {rare_categories}\n"
+            f"Missing: {missing_pct:.1%}"
+        )
+
+        axes[i, 0].text(
+            0.99,
+            0.98,
+            metadata,
+            transform=axes[i, 0].transAxes,
+            ha="right",
+            va="top",
+            fontsize=9,
+            bbox=dict(
+                facecolor="white",
+                edgecolor="lightgray",
+                alpha=0.90,
+                boxstyle="round,pad=.3"
+            )
         )
 
     plt.tight_layout()
 
-    return summaries
+    plt.show()
+
 # ==========================================================
 # Correlation Analysis
 # ==========================================================
@@ -489,20 +651,13 @@ def plot_correlation_analysis(
     data,
     variables,
     method="spearman",
-    figsize=(10, 8)
+    figsize=(12, 10)
 ):
     """
     Plot correlation matrix for numerical variables.
 
-    Parameters
-    ----------
-    data : DataFrame
-
-    variables : list
-
-    method : {"pearson", "spearman"}
-
-    figsize : tuple
+    Uses Spearman correlation by default because
+    credit variables usually contain skewness and outliers.
     """
 
     corr = (
@@ -526,7 +681,125 @@ def plot_correlation_analysis(
         center=0
     )
 
+    # ==========================================
+    # Axis formatting
+    # ==========================================
+
+    ax.tick_params(
+        axis="x",
+        rotation=45,
+        labelsize=9
+    )
+
+    ax.tick_params(
+        axis="y",
+        rotation=0,
+        labelsize=9
+    )
+
+    for label in ax.get_xticklabels():
+        label.set_horizontalalignment("right")
+
+    plt.tight_layout()
+
     return corr
+
+def find_redundant_variables(
+    corr_matrix,
+    threshold=0.85
+):
+    """
+    Identify highly correlated variable pairs.
+
+    Parameters
+    ----------
+    corr_matrix : DataFrame
+
+    threshold : float
+        Correlation threshold.
+
+    Returns
+    -------
+    DataFrame
+    """
+
+    correlations = (
+        corr_matrix
+        .where(
+            ~np.eye(
+                corr_matrix.shape[0],
+                dtype=bool
+            )
+        )
+        .stack()
+        .reset_index()
+    )
+
+    correlations.columns = [
+        "variable_1",
+        "variable_2",
+        "correlation"
+    ]
+
+    redundant = (
+        correlations
+        .loc[
+            correlations["correlation"].abs() >= threshold
+        ]
+    )
+
+    redundant = redundant[
+        redundant["variable_1"]
+        <
+        redundant["variable_2"]
+    ]
+
+    return (
+        redundant
+        .sort_values(
+            "correlation",
+            ascending=False
+        )
+        .reset_index(drop=True)
+    )
+
+def calculate_vif(
+    data,
+    variables
+):
+    """
+    Calculate Variance Inflation Factor.
+
+    """
+
+    X = (
+        data[variables]
+        .dropna()
+        .copy()
+    )
+
+
+    vif = pd.DataFrame()
+
+    vif["variable"] = X.columns
+
+    vif["VIF"] = [
+        variance_inflation_factor(
+            X.values,
+            i
+        )
+        for i in range(X.shape[1])
+    ]
+
+    return (
+        vif
+        .sort_values(
+            "VIF",
+            ascending=False
+        )
+        .reset_index(drop=True)
+    )
+
 
 # ==========================================================
 # Preprocessing Summary

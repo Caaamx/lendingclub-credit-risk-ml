@@ -446,6 +446,30 @@ def annotate_bars(
             fontweight="semibold"
         )
 
+def annotate_points(
+    ax,
+    fmt="{:.1%}"
+):
+    """
+    Annotate line plot points.
+    """
+
+    for line in ax.lines:
+
+        x_values = line.get_xdata()
+        y_values = line.get_ydata()
+
+        for x, y in zip(x_values, y_values):
+
+            ax.text(
+                x,
+                y,
+                fmt.format(y),
+                ha="center",
+                va="bottom",
+                fontsize=9
+            )
+
 # ==========================================================
 # Percentage Formatter
 # ==========================================================
@@ -520,31 +544,30 @@ def detect_zero_inflation(
 # Quantile Labels
 # ==========================================================
 
-def build_quantile_labels(
-    intervals,
-    decimals=1
-):
+def build_quantile_labels(intervals):
     """
-    Build readable labels from IntervalIndex.
+    Build quantile labels.
 
-    Example
+    Parameters
+    ----------
+    intervals : pandas.IntervalIndex
+
+    Returns
     -------
-    Q1
-    [0.0 – 15.4]
+    list
+
+        Quantile labels:
+
+        Q1
+        Q2
+        ...
+        Q10
     """
 
-    labels = []
-
-    for i, interval in enumerate(intervals, start=1):
-
-        left = round(interval.left, decimals)
-        right = round(interval.right, decimals)
-
-        labels.append(
-            f"Q{i}\n[{left} – {right}]"
-        )
-
-    return labels
+    return [
+        f"Q{i}"
+        for i in range(1, len(intervals) + 1)
+    ]
 
 # ==========================================================
 # Numeric Grouping
@@ -617,6 +640,10 @@ def prepare_numeric_groups(
 # Categorical Grouping
 # ==========================================================
 
+# ==========================================================
+# Prepare Categorical Groups
+# ==========================================================
+
 def prepare_categorical_groups(
     data,
     variable,
@@ -624,38 +651,67 @@ def prepare_categorical_groups(
     rare_threshold=None
 ):
     """
-    Prepare categorical variables.
+    Prepare categorical variables for visualization.
 
-    Rare categories can be grouped as 'Other'.
+    Parameters
+    ----------
+    data : DataFrame
+
+    variable : str
+
+    keep_missing : bool, default=True
+        Replace missing values with the label 'Missing'.
+
+    rare_threshold : float, optional
+        Categories representing less than this proportion
+        are grouped into 'Other'.
+
+    Returns
+    -------
+    DataFrame
+        Original variable plus a standardized 'group' column.
     """
 
     df = data[[variable]].copy()
 
+    # ------------------------------------------------------
+    # Convert any categorical dtype to object
+    # ------------------------------------------------------
+
+    df[variable] = df[variable].astype("object")
+
+    # ------------------------------------------------------
+    # Missing values
+    # ------------------------------------------------------
+
     if keep_missing:
-
-        df[variable] = df[variable].fillna(
-            "Missing"
-        )
-
+        df[variable] = df[variable].fillna("Missing")
     else:
-
         df = df.dropna()
+
+    # ------------------------------------------------------
+    # Rare categories
+    # ------------------------------------------------------
 
     if rare_threshold is not None:
 
-        freq = (
+        frequencies = (
             df[variable]
             .value_counts(normalize=True)
         )
 
-        rare_categories = freq[
-            freq < rare_threshold
+        rare_categories = frequencies[
+            frequencies < rare_threshold
         ].index
 
         df.loc[
             df[variable].isin(rare_categories),
             variable
         ] = "Other"
+
+    # ------------------------------------------------------
+    # Standardized output
+    # ------------------------------------------------------
 
     df["group"] = df[variable]
 
@@ -841,8 +897,23 @@ def plot_bar(
     if annotate:
         annotate_bars(ax)
 
-    format_axes(ax)
+    ax.tick_params(
+        axis="x",
+        rotation=45,
+        labelsize=9
+    )
 
+    ax.set_xticklabels(
+        [
+            label.get_text().replace("_", "\n")
+            for label in ax.get_xticklabels()
+        ]
+    )
+
+    for label in ax.get_xticklabels():
+        label.set_horizontalalignment("right")
+
+    format_axes(ax)
 # ==========================================================
 # Line Plot
 # ==========================================================
@@ -878,7 +949,9 @@ def plot_line(
 
     if annotate:
 
-        for xpos, value in enumerate(data[y]):
+        for idx, row in data.reset_index(drop=True).iterrows():
+
+            value = row[y]
 
             label = (
                 f"{value:.1%}"
@@ -886,12 +959,12 @@ def plot_line(
                 else f"{value:,.2f}"
             )
 
-            ax.text(
-                xpos,
-                value,
+            ax.annotate(
                 label,
+                xy=(idx, value),
+                xytext=(0, 8),
+                textcoords="offset points",
                 ha="center",
-                va="bottom",
                 fontsize=FONT["annotation"],
                 fontweight="bold",
                 color=color
@@ -899,6 +972,26 @@ def plot_line(
 
     if percentage:
         format_percentage_axis(ax)
+
+    # ==========================================
+    # Categorical axis formatting
+    # ==========================================
+
+    ax.tick_params(
+        axis="x",
+        rotation=45,
+        labelsize=9
+    )
+
+    ax.set_xticklabels(
+        [
+            label.get_text().replace("_", "\n")
+            for label in ax.get_xticklabels()
+        ]
+    )
+
+    for label in ax.get_xticklabels():
+        label.set_horizontalalignment("right")
 
     format_axes(ax)
 
@@ -912,7 +1005,8 @@ def plot_bar_distribution(
     variable,
     normalize=False,
     max_categories=None,
-    color=None
+    color=None,
+    annotate=True
 ):
     """
     Plot the distribution of a categorical variable.
@@ -954,18 +1048,21 @@ def plot_bar_distribution(
         data=summary,
         x="category",
         y="value",
-        color=color
+        color=color,
+        annotate=annotate
     )
 
-    if normalize:
+# Add labels only when requested and when the number of categories is manageable
+    if annotate and len(summary) <= 12:
 
         annotate_bars(
             ax,
-            fmt="{:.1%}"
+            fmt="{:.1%}" if normalize else "{:,.0f}"
         )
 
-        format_percentage_axis(ax)
+    if normalize:
 
+        format_percentage_axis(ax)
         ax.set_ylabel("Percentage")
 
     else:
@@ -974,8 +1071,18 @@ def plot_bar_distribution(
 
     ax.tick_params(
         axis="x",
-        rotation=35
+        rotation=45,
+        labelsize=9
     )
+    ax.set_xticklabels(
+    [
+        label.get_text().replace("_", "\n")
+        for label in ax.get_xticklabels()
+    ]
+    )
+
+    for label in ax.get_xticklabels():
+        label.set_horizontalalignment("right")
 
     return summary
 
@@ -991,15 +1098,9 @@ def plot_target_rate(
 ):
     """
     Plot target/default rate by groups.
-
-    Parameters
-    ----------
-    summary : DataFrame
-
-    group : str
-
-    target_rate : str
     """
+
+    annotate = len(summary) <= 12
 
     plot_line(
         ax=ax,
@@ -1007,11 +1108,16 @@ def plot_target_rate(
         x=group,
         y=target_rate,
         percentage=True,
-        annotate=True,
+        annotate=annotate,
         color=COLORS["danger"]
     )
 
     ax.set_ylabel("Target Rate")
+
+    ax.tick_params(
+        axis="x",
+        rotation=45
+    )
 
     # ==========================================================
 # Missing Values
@@ -1020,29 +1126,58 @@ def plot_target_rate(
 def plot_missing(
     ax,
     data,
+    variable=None,
     variables=None,
-    color=None
+    color=None,
+    sort=True
 ):
     """
-    Plot percentage of missing values.
+    Plot the percentage of missing values.
 
     Parameters
     ----------
+    ax : matplotlib.axes.Axes
+
+    data : pandas.DataFrame
+
+    variable : str, optional
+        Single variable to evaluate.
+
     variables : list, optional
-        Variables to evaluate.
+        Multiple variables to evaluate.
+
+    color : str, optional
+
+    sort : bool, default=True
+        Sort variables by missing percentage.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Summary containing the missing rate of each variable.
     """
 
     if color is None:
         color = COLORS["warning"]
 
+    # ======================================================
+    # Normalize input
+    # ======================================================
+
+    if variable is not None:
+        variables = [variable]
+
     if variables is None:
-        variables = data.columns
+        variables = list(data.columns)
+
+    # ======================================================
+    # Missing summary
+    # ======================================================
 
     summary = (
         data[variables]
         .isna()
         .mean()
-        .sort_values(ascending=False)
         .reset_index()
     )
 
@@ -1050,6 +1185,16 @@ def plot_missing(
         "variable",
         "missing_rate"
     ]
+
+    if sort:
+        summary = summary.sort_values(
+            "missing_rate",
+            ascending=False
+        )
+
+    # ======================================================
+    # Plot
+    # ======================================================
 
     plot_bar(
         ax=ax,
@@ -1060,13 +1205,16 @@ def plot_missing(
     )
 
     annotate_bars(
-        ax,
+        ax=ax,
         fmt="{:.1%}"
     )
 
     format_percentage_axis(ax)
 
-    ax.set_ylabel("Missing Rate")
+    format_axes(
+        ax=ax,
+        ylabel="Missing Rate"
+    )
 
     ax.tick_params(
         axis="x",
